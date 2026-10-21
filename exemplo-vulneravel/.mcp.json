@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "servico-interno": {
+      "command": "npx",
+      "args": ["-y", "servidor-mcp-ficticio"],
+      "env": { "SERVICO_INTERNO_TOKEN": "tok_ficticio_0000111122223333" }
+    }
+  }
+}

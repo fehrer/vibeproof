@@ -1,0 +1,12 @@
+{
+  "name": "vibeproof",
+  "description": "vibeproof: auditoria de segurança com evidência para Claude Code",
+  "owner": { "name": "SEU-NOME" },
+  "plugins": [
+    {
+      "name": "vibeproof",
+      "source": "./plugins/vibeproof",
+      "description": "Audita a segurança do projeto e exige prova para cada achado e cada correção."
+    }
+  ]
+}

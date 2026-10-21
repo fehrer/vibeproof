@@ -1,0 +1,8 @@
+# Relatórios da skill descrevem como explorar falhas: não versione
+.auditoria-seguranca/
+__pycache__/
+*.pyc
+.DS_Store
+
+# O .env do exemplo é fictício e faz parte da demonstração
+!exemplo-vulneravel/.env

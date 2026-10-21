@@ -1,0 +1,11 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: postgres123
+    ports:
+      - "5432:5432"
+  app:
+    build: .
+    ports:
+      - "3000:3000"
