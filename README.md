@@ -55,14 +55,14 @@ Somam-se a eles as quatro áreas da tabela acima.
 Dentro do Claude Code:
 
 ```
-/plugin marketplace add SEU-USUARIO/vibeproof
+/plugin marketplace add fehrer/vibeproof
 /plugin install vibeproof@vibeproof
 ```
 
 ### Cópia manual
 
 ```bash
-git clone https://github.com/SEU-USUARIO/vibeproof.git
+git clone https://github.com/fehrer/vibeproof.git
 cp -r vibeproof/plugins/vibeproof/skills/vibeproof ~/.claude/skills/
 ```
 

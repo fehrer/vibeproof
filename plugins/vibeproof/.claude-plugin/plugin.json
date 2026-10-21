@@ -2,7 +2,7 @@
   "name": "vibeproof",
   "version": "0.1.0",
   "description": "Auditoria de segurança que só aceita achados comprovados: arquivo, linha, reprodução e teste de regressão. Inclui IA/MCP, Supabase/Firebase, supply chain, CI/CD, Docker e LGPD.",
-  "author": { "name": "SEU-NOME" },
+  "author": { "name": "Michel Fehrer" },
   "license": "MIT",
   "keywords": ["seguranca", "security", "audit", "vibe-coding", "owasp", "lgpd", "supabase", "firebase", "mcp"]
 }

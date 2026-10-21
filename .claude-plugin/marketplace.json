@@ -1,7 +1,7 @@
 {
   "name": "vibeproof",
   "description": "vibeproof: auditoria de segurança com evidência para Claude Code",
-  "owner": { "name": "SEU-NOME" },
+  "owner": { "name": "Michel Fehrer" },
   "plugins": [
     {
       "name": "vibeproof",

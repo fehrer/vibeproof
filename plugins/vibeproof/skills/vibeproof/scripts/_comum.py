@@ -6,7 +6,15 @@ Só biblioteca padrão. Nenhum script faz requisição de rede nem altera arquiv
 import os
 import signal
 import subprocess
+import sys
 from pathlib import Path
+
+# Console do Windows costuma usar cp1252: força UTF-8 para acentos e emojis.
+for _fluxo in (sys.stdout, sys.stderr):
+    try:
+        _fluxo.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 
 # Sair em silêncio quando a saída é cortada (ex.: `| head`).
 if hasattr(signal, "SIGPIPE"):
@@ -81,7 +89,7 @@ def eh_codigo(caminho: Path) -> bool:
         return False
     if nome in NOMES_CODIGO or nome.startswith("Dockerfile") or nome.startswith("docker-compose"):
         return True
-    return caminho.suffix.lower() in EXTENSOES_CODIGO or nome in {"firestore.rules", "storage.rules", "database.rules.json", ".mcp.json", "mcp.json"}
+    return caminho.suffix.lower() in EXTENSOES_CODIGO or nome in {"firestore.rules", "storage.rules", "database.rules.json", ".mcp.json", "mcp.json", "claude_desktop_config.json"}
 
 
 def rel(caminho: Path, raiz: Path) -> str:

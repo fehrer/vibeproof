@@ -15,5 +15,8 @@ atribuição em massa, XSS por innerHTML, SSRF, hash MD5 de senha, erro com stac
 rota admin sem autenticação, CORS aberto com credenciais, CPF em log, tabela Supabase sem RLS,
 papel lido de user_metadata, view sem security_invoker, regras do Firestore abertas,
 Dockerfile como root com segredo em ENV, banco exposto no compose, workflow com
-pull_request_target e injeção de script, credencial em .mcp.json e um comentário
-tentando manipular o auditor.
+pull_request_target e injeção de script, configuração MCP com servidor sem versão fixa,
+acesso ao disco inteiro e token no arquivo, e um comentário tentando manipular o auditor.
+
+A configuração MCP fica em `config/` de propósito, fora do `.mcp.json`: assim o Claude Code
+não oferece nem inicia nenhum servidor ao abrir esta pasta.

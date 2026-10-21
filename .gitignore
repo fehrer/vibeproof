@@ -1,6 +1,7 @@
 # Relatórios da skill descrevem como explorar falhas: não versione
 .auditoria-seguranca/
 __pycache__/
+node_modules/
 *.pyc
 .DS_Store
 

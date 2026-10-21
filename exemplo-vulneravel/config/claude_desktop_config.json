@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "arquivos": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "/"]
+    },
+    "servico-interno": {
+      "command": "node",
+      "args": ["./mcp/servidor-interno.js"],
+      "env": { "SERVICO_INTERNO_TOKEN": "tok_ficticio_0000111122223333" }
+    }
+  }
+}
