@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Reconhecimento: detecta stack, serviços e sinais de risco estruturais.
 
-Uso: python3 detectar_stack.py [raiz] [--json]
+Uso: <python> detectar_stack.py [raiz] [--json] [--diff BASE..HEAD | --arquivos LISTA]
+
+A stack é detectada sempre no repositório inteiro; --diff/--arquivos só informam o escopo.
 
 Somente leitura. Não faz requisições de rede.
 """
@@ -13,7 +15,7 @@ from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _comum import caminhar, eh_repo_git, git, ler_texto, rel  # noqa: E402
+from _comum import caminhar, eh_repo_git, git, ler_texto, parser_base, rel, resolver_escopo  # noqa: E402
 
 # nome do pacote -> (categoria, rótulo)
 PACOTES_JS = {
@@ -107,6 +109,27 @@ ARQUIVOS_SINAL = [
     (r"(^|/)\.github/dependabot\.ya?ml$", "manutencao", "Dependabot"),
     (r"(^|/)renovate\.json5?$", "manutencao", "Renovate"),
     (r"(^|/)\.dockerignore$", "infra", ".dockerignore"),
+    (r"(^|/)cloudbuild\.ya?ml$", "nuvem", "Google Cloud Build"),
+    (r"(^|/)[^/]+\.tf$", "nuvem", "Terraform"),
+    (r"(^|/)serverless\.ya?ml$", "nuvem", "Serverless Framework"),
+    (r"(^|/)cdk\.json$", "nuvem", "AWS CDK"),
+    (r"(^|/)(Pulumi\.ya?ml)$", "nuvem", "Pulumi"),
+]
+
+# Sinais de nuvem pelo conteúdo: (padrão do arquivo, padrão do conteúdo, rótulo)
+SINAIS_NUVEM_CONTEUDO = [
+    (r"(^|/)app\.ya?ml$", r"(?m)^\s*runtime\s*:", "Google App Engine"),
+    (r"(^|/)template\.ya?ml$", r"AWSTemplateFormatVersion|AWS::Serverless", "AWS SAM / CloudFormation"),
+    (r"(\.ya?ml|\.sh|Makefile|package\.json|\.toml|Dockerfile[^/]*|\.md)$",
+     r"gcloud\s+run\s+(deploy|services)|google-github-actions/deploy-cloudrun|\brun\.app\b", "Google Cloud Run"),
+    (r"(\.ya?ml|\.sh|Makefile|package\.json|\.toml)$",
+     r"gcloud\s+functions\s+deploy|google-github-actions/deploy-cloud-functions", "Google Cloud Functions"),
+    (r"(\.ya?ml|\.sh|Makefile|package\.json|\.toml)$",
+     r"google-github-actions/auth|gcloud\s+(auth|config|builds|scheduler|secrets)\b", "Google Cloud (gcloud)"),
+    (r"(\.ya?ml|\.sh|Makefile|package\.json|\.toml)$",
+     r"aws-actions/configure-aws-credentials|\baws\s+(lambda|ecs|s3|cloudformation|deploy)\b", "AWS"),
+    (r"(\.ya?ml|\.sh|Makefile|package\.json|\.toml)$",
+     r"azure/(login|webapps-deploy|functions-action)|\baz\s+(webapp|functionapp|containerapp)\b", "Azure"),
 ]
 
 LOCKFILES = {"package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lock", "bun.lockb",
@@ -140,9 +163,13 @@ def ler_deps_python(caminho: Path):
 
 
 def main():
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    como_json = "--json" in sys.argv
-    raiz = Path(args[0] if args else ".").resolve()
+    parser = parser_base("Reconhecimento: detecta stack, serviços, nuvem e sinais estruturais.")
+    args = parser.parse_args()
+    raiz = Path(args.raiz).resolve()
+    como_json = args.json
+    # A stack é contexto: é detectada sempre no repositório inteiro, mesmo com --diff/--arquivos.
+    # O escopo só é informado aqui e restringe os outros scripts.
+    escopo = resolver_escopo(raiz, args)
 
     achados = {}  # categoria -> set(rótulos)
     onde = {}     # rótulo -> primeiro arquivo
@@ -169,6 +196,9 @@ def main():
         for padrao, cat, rotulo in ARQUIVOS_SINAL:
             if re.search(padrao, r):
                 marcar(cat, rotulo, r)
+        for padrao_arq, padrao_txt, rotulo in SINAIS_NUVEM_CONTEUDO:
+            if re.search(padrao_arq, r) and re.search(padrao_txt, ler_texto(arq) or ""):
+                marcar("nuvem", rotulo, r)
         if nome == "package.json":
             pkg_jsons.append(r)
             deps, scripts = ler_deps_package_json(arq)
@@ -229,6 +259,8 @@ def main():
         refs.append("references/supabase-firebase.md")
     if achados.get("ci") or achados.get("infra"):
         refs[2] = "references/supply-chain-ci-docker.md (dependências, CI e Docker)"
+    if achados.get("nuvem"):
+        refs.append("references/nuvem.md (checklist de configuração; a pessoa roda os comandos e cola a saída)")
     refs.append("references/lgpd.md")
 
     resultado = {
@@ -242,6 +274,7 @@ def main():
         "arquivos_env": envs,
         "alertas": alertas,
         "referencias_recomendadas": refs,
+        "escopo": escopo.como_dict(),
     }
 
     if como_json:
@@ -253,6 +286,8 @@ def main():
           + (f" · commit {resultado['commit']}" if resultado["commit"] else ""))
     if linguagens:
         print("Linguagens: " + ", ".join(f"{k} ({v})" for k, v in linguagens.most_common(8)))
+    if escopo.restrito:
+        print(f"Escopo da auditoria: {escopo.descricao} (a stack abaixo considera o repositório inteiro)")
     print("\n## Detectado")
     if not achados:
         print("(nada reconhecido; analise manualmente)")

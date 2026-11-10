@@ -3,7 +3,9 @@
 Só biblioteca padrão. Nenhum script faz requisição de rede nem altera arquivos.
 """
 
+import argparse
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -131,3 +133,88 @@ def eh_repo_git(raiz: Path) -> bool:
 def cortar(linha: str, n: int = 160) -> str:
     linha = linha.strip()
     return linha if len(linha) <= n else linha[: n - 1] + "…"
+
+
+# ---------------------------------------------------------------------------
+# Argumentos e escopo (repositório inteiro, diff ou lista de arquivos)
+# ---------------------------------------------------------------------------
+
+def parser_base(descricao: str, escopo: bool = True) -> argparse.ArgumentParser:
+    """Parser com os argumentos comuns a todos os scripts."""
+    p = argparse.ArgumentParser(description=descricao)
+    p.add_argument("raiz", nargs="?", default=".", help="pasta do projeto (padrão: diretório atual)")
+    p.add_argument("--json", action="store_true", help="saída em JSON")
+    if escopo:
+        g = p.add_mutually_exclusive_group()
+        g.add_argument("--diff", metavar="BASE..HEAD",
+                       help="analisa só os arquivos alterados no intervalo do Git (ex.: main..HEAD)")
+        g.add_argument("--arquivos", metavar="LISTA",
+                       help="analisa só estes arquivos (separados por vírgula, relativos à raiz)")
+    return p
+
+
+def normalizar_caminho(caminho: str) -> str:
+    caminho = caminho.strip().replace("\\", "/")
+    while caminho.startswith("./"):
+        caminho = caminho[2:]
+    return caminho
+
+
+class Escopo:
+    """Conjunto de arquivos analisados. arquivos=None significa o repositório inteiro."""
+
+    def __init__(self, arquivos=None, descricao="repositório inteiro", intervalo=None):
+        self.arquivos = arquivos
+        self.descricao = descricao
+        self.intervalo = intervalo
+
+    @property
+    def restrito(self) -> bool:
+        return self.arquivos is not None
+
+    def contem(self, caminho_relativo: str) -> bool:
+        return self.arquivos is None or normalizar_caminho(caminho_relativo) in self.arquivos
+
+    def como_dict(self) -> dict:
+        return {"descricao": self.descricao, "intervalo": self.intervalo,
+                "arquivos": sorted(self.arquivos) if self.restrito else None}
+
+
+def sair_com_erro(mensagem: str, codigo: int = 2):
+    print(f"ERRO: {mensagem}", file=sys.stderr)
+    sys.exit(codigo)
+
+
+def resolver_escopo(raiz: Path, args) -> Escopo:
+    intervalo = getattr(args, "diff", None)
+    if intervalo:
+        saida = git(raiz, "diff", "--name-only", "--diff-filter=ACMRT", "--relative", intervalo, "--")
+        if saida is None:
+            sair_com_erro(f"não foi possível calcular o diff '{intervalo}'. Confira se a pasta é um "
+                          "repositório Git e se as duas referências existem.")
+        arquivos = {normalizar_caminho(l) for l in saida.splitlines() if l.strip()}
+        return Escopo(arquivos, f"diff {intervalo}: {len(arquivos)} arquivo(s) alterado(s)", intervalo)
+    lista = getattr(args, "arquivos", None)
+    if lista:
+        arquivos = {normalizar_caminho(a) for a in re.split(r"[,\n]", lista) if a.strip()}
+        return Escopo(arquivos, f"lista informada: {len(arquivos)} arquivo(s)")
+    return Escopo()
+
+
+def arquivos_no_escopo(raiz: Path, escopo: Escopo, incluir_build: bool = False):
+    """Arquivos a analisar: a árvore inteira ou só os do escopo."""
+    raiz = raiz.resolve()
+    if not escopo.restrito:
+        yield from caminhar(raiz, incluir_build)
+        return
+    for r in sorted(escopo.arquivos):
+        caminho = raiz / r
+        if caminho.is_file() and not any(parte in IGNORAR_SEMPRE for parte in Path(r).parts):
+            yield caminho
+
+
+def linha_de_escopo(escopo: Escopo) -> str:
+    texto = f"Escopo: {escopo.descricao}"
+    if escopo.restrito:
+        texto += ". Arquivos fora do escopo não foram analisados por este script."
+    return texto

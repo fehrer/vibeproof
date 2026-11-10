@@ -2,85 +2,113 @@
 
 > **Confidencial.** Este relatório descreve como explorar falhas reais. Não publique em repositório público antes de corrigir. Segredos aparecem mascarados.
 
+## Resumo (para quem não é da área)
+
+**Posso publicar?** Sim / Não, por causa de [N] problemas graves. / Sim, mas confira os itens não verificados antes.
+
+**O que arrumar antes, em ordem:**
+1. [O que pode acontecer] → [o que fazer]. Exemplo: "Qualquer pessoa consegue baixar a lista de clientes com CPF → exigir login na rota /admin."
+2. ...
+
+**O que ainda não foi verificado:** [itens que dependem de painel de nuvem, produção ou outra pessoa], e quem precisa conferir.
+
+(Máximo de uma página. Sem siglas sem explicação. Nunca escreva que o app "está seguro".)
+
+---
+
+## Detalhe técnico
+
 | | |
 |---|---|
 | Data | AAAA-MM-DD |
 | Commit | `abc1234` |
-| Escopo | repositório inteiro / pasta / branch |
+| Nível | rapido / padrao / completo |
+| Escopo | repositório inteiro / `diff base..head` / lista de arquivos |
+| Fora do escopo | o que não foi analisado e por quê |
 | Ambiente usado nos testes | local / banco de teste / sem execução |
 | Stack detectada | ... |
+| Arquivo de máquina | `achados-AAAA-MM-DD.json` |
 
-## Resumo
+### Defesas existentes (fase 0)
 
-Três a cinco frases em linguagem direta: o estado geral, o problema mais grave e o que fazer primeiro. Nunca afirme que o projeto "está seguro".
+| Controle existente | Onde está | O que cobre | Executado? |
+|---|---|---|---|
+| Teste de autorização | `tests/test_autorizacao.py` | IDOR em pedidos | Sim, passou (saída abaixo) |
 
-## Placar
+### Placar
 
 | | Crítica | Alta | Média | Baixa |
 |---|---|---|---|---|
 | Confirmado | 0 | 0 | 0 | 0 |
 | Suspeita | 0 | 0 | 0 | 0 |
 
-Não verificado: N itens · Descartado (com motivo): N pistas
+Coberto por teste existente: N · Não verificado: N · Descartado (com motivo): N
 
-## Bloqueadores de publicação
+### Comparação com a auditoria anterior
 
-Achados Críticos ou Altos confirmados, e segredos expostos ainda não revogados. Se não houver nenhum, diga isso e lembre o que não foi verificado.
+| Regressões | Novos | Corrigidos | Inalterados | Não reavaliados |
+|---|---|---|---|---|
+| 0 | 0 | 0 | 0 | 0 |
+
+(Saída de `comparar_auditorias.py`. Omita a seção na primeira auditoria.)
+
+### Bloqueadores de publicação
 
 1. **[ID] Título curto**: uma frase sobre o impacto.
 
-## Premissas sobre regras de acesso
+### Premissas sobre regras de acesso
 
-Quem pode fazer o quê, segundo o código ou a documentação. Marque o que foi deduzido e precisa de confirmação.
+Quem pode fazer o quê, segundo o código ou a documentação. Marque o que foi deduzido.
 
-## Achados
+### Achados
 
 | ID | Risco | Status | Severidade | Onde | Correção | Teste |
 |---|---|---|---|---|---|---|
-| S-01 | IDOR em projetos | Confirmado | Alta | `src/routes/projects.ts:42` | Filtrar por `ownerId` da sessão | `tests/projects.authz.test.ts` |
+| a1b2c3d4e5f6 | IDOR em projetos | Confirmado | Alta | `src/rotas/projetos.js:42` | Filtrar por dono da sessão | `tests/...` |
 
-### S-01 · Título do achado
+#### a1b2c3d4e5f6 · Título do achado
 
 - **Status e severidade**: Confirmado · Alta, porque [quem explora, o que precisa, o que ganha].
-- **Caminho do dado**: `arquivo:linha` (fonte) → ... → `arquivo:linha` (destino).
+- **Caminho do dado**: `arquivo:linha` (fonte) → ... → `arquivo:linha` (destino). Indique "fora do diff, alcançado pela mudança" quando for o caso.
 - **Reprodução**: comando ou teste, com dados fictícios.
 - **Saída observada** (mascarada):
   ```
   ...
   ```
-- **Impacto neste projeto**: frase concreta.
 - **Correção proposta**:
   ```diff
   ...
   ```
-- **Testes**: negativo `...` e positivo `...`. Resultado antes: falha. Resultado depois: passa (ou "pendente de aprovação").
+- **Testes**: negativo e positivo. Resultado antes: falha. Depois: passa (ou "pendente de aprovação").
 
-(Repita o bloco para cada achado.)
+### Cobertos por testes existentes
 
-## Descartados
+| Risco | Onde | Teste | Saída da execução |
+|---|---|---|---|
+
+### Descartados
 
 | Pista | Onde | Por que não é falha |
 |---|---|---|
-| `innerHTML` | `src/ui/banner.js:10` | Recebe só texto fixo definido no código |
 
-## Não verificado e dependências externas
+### Não verificado e dependências externas
 
-Itens que exigem acesso a painéis, produção ou infraestrutura, com o que conferir em cada um. Exemplos: regras do WAF/CDN, Security Advisor do Supabase, variáveis de ambiente de produção, rate limit em várias instâncias.
+Itens que exigem painel, produção ou infraestrutura, com o comando ou a tela a conferir (veja `references/nuvem.md`).
 
-## Inventário de dados pessoais (LGPD)
+### Inventário de dados pessoais (LGPD)
 
-Tabelas e campos com dados pessoais, para onde eles vão (terceiros) e o que foi verificado sobre exclusão, exportação e retenção.
+(Obrigatório no nível completo.)
 
-## Comandos executados
+### Comandos executados
 
 | Comando | Resultado real |
 |---|---|
-| `python3 .../detectar_stack.py .` | Node 20, Next.js, Prisma, Supabase |
-| `npm test -- projects` | 1 falha (antes da correção) |
 
-## Risco residual e próximos passos
+### O que foi criado ou instalado no projeto
 
-O que continua arriscado mesmo depois das correções propostas, e a ordem sugerida de ação.
+Arquivos de teste, pacotes e pastas, e como remover.
+
+### Risco residual e próximos passos
 
 ---
 Gerado com a skill vibeproof.

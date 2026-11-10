@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Procura segredos expostos. Valores aparecem SEMPRE mascarados.
 
-Uso: python3 buscar_segredos.py [raiz] [--historico] [--limite-mb N] [--json]
+Uso: <python> buscar_segredos.py [raiz] [--historico] [--limite-mb N] [--json]
+                                   [--diff BASE..HEAD | --arquivos LISTA]
 
   --historico    também examina o histórico do Git (linhas adicionadas em todos os commits)
   --limite-mb N  teto de leitura do histórico, em MB (padrão 50)
@@ -17,8 +18,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _comum import (PASTAS_BUILD, caminhar, eh_repo_git, git, ler_texto,  # noqa: E402
-                    mascarar, rel)
+from _comum import (PASTAS_BUILD, arquivos_no_escopo, eh_repo_git, git,  # noqa: E402
+                    ler_texto, linha_de_escopo, mascarar, parser_base, rel, resolver_escopo)
 
 # (tipo, regex com grupo 'v' para o valor, gravidade sugerida)
 PADROES = [
@@ -101,8 +102,10 @@ def examinar_linha(linha: str, config: bool = False):
                 tipo, grav, dica = classificar_jwt(v)
             elif tipo == "Google API key":
                 dica = "Pode ser a apiKey pública do Firebase; se for, restrinja a chave no Google Cloud."
-            elif tipo == "Conexão de banco com senha" and PLACEHOLDERS.search(v):
-                continue
+            elif tipo == "Conexão de banco com senha":
+                senha = re.search(r"://[^:/\s]+:([^@\s]+)@", v)
+                if senha and PLACEHOLDERS.search(senha.group(1)):
+                    continue
             resultados.append((tipo, grav, mascarar(v), dica))
     m = GENERICO_ASPAS.search(linha) or (GENERICO_CONFIG.search(linha) if config else None)
     if m and not PLACEHOLDERS.search(m.group("v")) and not any(m.group("v") in v or v in m.group("v") for v in vistos):
@@ -120,20 +123,17 @@ def examinar_linha(linha: str, config: bool = False):
 
 
 def main():
-    args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    historico = "--historico" in sys.argv
-    como_json = "--json" in sys.argv
-    limite_mb = 50
-    if "--limite-mb" in sys.argv:
-        try:
-            limite_mb = int(sys.argv[sys.argv.index("--limite-mb") + 1])
-            args = [a for a in args if a != str(limite_mb)]
-        except (IndexError, ValueError):
-            pass
-    raiz = Path(args[0] if args else ".").resolve()
+    parser = parser_base("Procura segredos expostos. Valores sempre mascarados.")
+    parser.add_argument("--historico", action="store_true",
+                        help="examina também as linhas adicionadas em todo o histórico do Git")
+    parser.add_argument("--limite-mb", type=int, default=50, help="teto de leitura do histórico, em MB")
+    args = parser.parse_args()
+    raiz = Path(args.raiz).resolve()
+    escopo = resolver_escopo(raiz, args)
+    historico, como_json, limite_mb = args.historico, args.json, args.limite_mb
 
     achados, source_maps = [], []
-    for arq in caminhar(raiz, incluir_build=True):
+    for arq in arquivos_no_escopo(raiz, escopo, incluir_build=True):
         r = rel(arq, raiz).replace("\\", "/")
         if arq.name.endswith(".map"):
             if any(r.startswith(p + "/") or f"/{p}/" in r for p in PASTAS_BUILD):
@@ -164,17 +164,23 @@ def main():
     eh_git = eh_repo_git(raiz)
     if eh_git:
         for f in (git(raiz, "ls-files") or "").splitlines():
+            if not escopo.contem(f):
+                continue
             if ARQUIVOS_SENSIVEIS.search(f) and not ENV_SEGUROS.search(f):
                 versionados.append(f)
+        alvo_log = [escopo.intervalo] if escopo.intervalo else ["--all"]
+        if escopo.intervalo:
+            historico = True  # no modo diff, os commits do intervalo são sempre examinados
         if historico:
-            saida = git(raiz, "log", "--all", "--diff-filter=A", "--name-only", "--pretty=format:@@%h") or ""
+            saida = git(raiz, "log", *alvo_log, "--diff-filter=A", "--name-only", "--relative",
+                        "--pretty=format:@@%h") or ""
             commit = None
             for linha in saida.splitlines():
                 if linha.startswith("@@"):
                     commit = linha[2:]
                 elif linha and ARQUIVOS_SENSIVEIS.search(linha) and not ENV_SEGUROS.search(linha):
                     historico_arquivos.append({"commit": commit, "arquivo": linha})
-            log = git(raiz, "log", "--all", "-p", "-U0", "--no-color", "--pretty=format:@@%h",
+            log = git(raiz, "log", *alvo_log, "-p", "-U0", "--no-color", "--relative", "--pretty=format:@@%h",
                       limite_bytes=limite_mb * 1_000_000) or ""
             commit, arquivo = None, None
             for linha in log.splitlines():
@@ -195,6 +201,7 @@ def main():
         "achados": achados, "arquivos_sensiveis_versionados": versionados,
         "source_maps_em_build": source_maps, "historico_arquivos": historico_arquivos,
         "historico_achados": historico_achados, "git": eh_git, "historico_verificado": historico,
+        "escopo": escopo.como_dict(),
     }
     if como_json:
         print(json.dumps(resultado, ensure_ascii=False, indent=2))
@@ -202,6 +209,7 @@ def main():
 
     ordem = {"crítica": 0, "alta": 1, "verificar": 2, "info": 3}
     print(f"# Busca de segredos: {raiz.name}")
+    print(linha_de_escopo(escopo))
     print("Pistas, não achados. Valores mascarados. Confirme cada item abrindo o arquivo.\n")
     print(f"## No código e em artefatos ({len(achados)})")
     for a in sorted(achados, key=lambda x: (ordem.get(x["gravidade"], 9), x["arquivo"], x["linha"]))[:200]:
@@ -218,7 +226,8 @@ def main():
     for f in source_maps[:30]:
         print(f"- {f}")
     if historico:
-        print(f"\n## Histórico do Git: arquivos sensíveis já adicionados ({len(historico_arquivos)})")
+        quais = f"commits de {escopo.intervalo}" if escopo.intervalo else "todos os commits"
+        print(f"\n## Histórico do Git ({quais}): arquivos sensíveis adicionados ({len(historico_arquivos)})")
         for h in historico_arquivos[:50]:
             print(f"- {h['commit']} · {h['arquivo']}")
         print(f"\n## Histórico do Git: segredos em linhas adicionadas ({len(historico_achados)})")

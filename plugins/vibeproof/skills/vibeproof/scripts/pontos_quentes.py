@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Lista pontos quentes: trechos que merecem investigação, agrupados por risco.
 
-Uso: python3 pontos_quentes.py [raiz] [--categoria NOME] [--max N] [--json]
+Uso: <python> pontos_quentes.py [raiz] [--categoria NOME] [--max N] [--json]
+                                  [--diff BASE..HEAD | --arquivos LISTA]
 
 Cada resultado é uma PISTA. Abra o arquivo, siga o dado e classifique.
 Ausência de resultado NÃO é prova de segurança: os padrões são textuais.
@@ -14,7 +15,8 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _comum import caminhar, cortar, eh_codigo, ler_texto, mascarar, rel  # noqa: E402
+from _comum import (arquivos_no_escopo, caminhar, cortar, eh_codigo, ler_texto,  # noqa: E402
+                    linha_de_escopo, mascarar, parser_base, rel, resolver_escopo)
 
 # (categoria, descrição, regex, filtro de arquivo opcional)
 JS = r"\.(m?[jt]sx?|c[jt]s|vue|svelte|astro|html?|ejs|hbs)$"
@@ -133,6 +135,18 @@ def higienizar(trecho: str) -> str:
     return SEGREDO_NA_LINHA.sub(lambda m: m.group(1) + mascarar(m.group(2)) + m.group(1), trecho)
 
 
+# Atribuição de HTML cujo lado direito é só texto fixo (sem variável nem interpolação).
+_HTML_FIXO = re.compile(
+    r"\.(innerHTML|outerHTML)\s*\+?=\s*(?:'[^'\\]*'|\"[^\"\\]*\"|`[^`$\\]*`)\s*;?\s*(//.*)?$")
+
+
+def nota_de_descarte(categoria: str, linha: str):
+    """Marca pistas que provavelmente serão descartadas, sem escondê-las."""
+    if categoria == "xss" and _HTML_FIXO.search(linha):
+        return "texto fixo, sem dado externo"
+    return None
+
+
 def analisar_sql(textos):
     """Análise por instrução SQL em todas as migrations: RLS, políticas de UPDATE e views."""
     pistas = []
@@ -166,21 +180,17 @@ def analisar_sql(textos):
 
 
 def main():
-    args = sys.argv[1:]
-    como_json = "--json" in args
-    filtro, maximo = None, 40
-    if "--categoria" in args:
-        filtro = args[args.index("--categoria") + 1]
-    if "--max" in args:
-        maximo = int(args[args.index("--max") + 1])
-    posicionais = [a for i, a in enumerate(args) if not a.startswith("--")
-                   and (i == 0 or args[i - 1] not in ("--categoria", "--max"))]
-    raiz = Path(posicionais[0] if posicionais else ".").resolve()
+    parser = parser_base("Lista pontos quentes (pistas) agrupados por risco.")
+    parser.add_argument("--categoria", help="mostra só uma categoria (ex.: xss, sql, ssrf)")
+    parser.add_argument("--max", type=int, default=40, help="máximo de itens por categoria no texto")
+    args = parser.parse_args()
+    raiz = Path(args.raiz).resolve()
+    escopo = resolver_escopo(raiz, args)
+    filtro, maximo = args.categoria, args.max
 
     resultados = {}
     dockerfiles_sem_user = []
-    textos_sql = []
-    for arq in caminhar(raiz):
+    for arq in arquivos_no_escopo(raiz, escopo):
         if not eh_codigo(arq):
             continue
         r = rel(arq, raiz).replace("\\", "/")
@@ -189,10 +199,8 @@ def main():
             continue
         if re.search(DOCKER, r) and not re.search(r"(?im)^\s*USER\s+(?!root\b)\S+", texto):
             dockerfiles_sem_user.append(r)
-        if r.endswith(".sql"):
-            textos_sql.append((r, texto))
-        linhas = texto.splitlines()
-        for n, linha in enumerate(linhas, 1):
+        vistos_no_arquivo = set()
+        for n, linha in enumerate(texto.splitlines(), 1):
             if len(linha) > 2000:
                 continue
             for cat, desc, rx, rx_arq in COMPILADOS:
@@ -201,24 +209,40 @@ def main():
                 if rx_arq and not rx_arq.search(r):
                     continue
                 if rx.search(linha):
-                    resultados.setdefault(cat, []).append(
-                        {"arquivo": r, "linha": n, "padrao": desc, "trecho": higienizar(cortar(linha))})
+                    if (cat, n) in vistos_no_arquivo:
+                        continue  # uma pista por linha e categoria, mesmo que vários padrões batam
+                    vistos_no_arquivo.add((cat, n))
+                    item = {"arquivo": r, "linha": n, "padrao": desc, "trecho": higienizar(cortar(linha))}
+                    nota = nota_de_descarte(cat, linha)
+                    if nota:
+                        item["descarte_provavel"] = nota
+                    resultados.setdefault(cat, []).append(item)
 
     if dockerfiles_sem_user and (not filtro or filtro == "docker"):
         for d in dockerfiles_sem_user:
             resultados.setdefault("docker", []).append(
                 {"arquivo": d, "linha": 0, "padrao": "Dockerfile sem USER: o processo roda como root", "trecho": ""})
 
-    if textos_sql and (not filtro or filtro == "supabase"):
+    # O RLS de uma tabela pode estar habilitado em outra migration: a análise de SQL
+    # sempre lê todas as migrations, mas só reporta pistas de arquivos dentro do escopo.
+    if not filtro or filtro == "supabase":
+        textos_sql = []
+        for arq in caminhar(raiz):
+            if arq.suffix.lower() == ".sql":
+                texto = ler_texto(arq)
+                if texto is not None:
+                    textos_sql.append((rel(arq, raiz).replace("\\", "/"), texto))
         for pista in analisar_sql(textos_sql):
-            resultados.setdefault("supabase", []).append(pista)
+            if escopo.contem(pista["arquivo"]):
+                resultados.setdefault("supabase", []).append(pista)
 
-    if como_json:
-        print(json.dumps(resultados, ensure_ascii=False, indent=2))
+    if args.json:
+        print(json.dumps({"escopo": escopo.como_dict(), "resultados": resultados}, ensure_ascii=False, indent=2))
         return
 
     total = sum(len(v) for v in resultados.values())
     print(f"# Pontos quentes: {raiz.name} ({total} pistas)")
+    print(linha_de_escopo(escopo))
     print("Pistas para investigar, não achados. Nenhum resultado não prova que está seguro.\n")
     if not resultados:
         print("Nenhum padrão encontrado. Siga a investigação manual por risco.")
@@ -227,7 +251,8 @@ def main():
         print(f"## {cat} ({len(itens)})")
         for it in itens[:maximo]:
             local = f"{it['arquivo']}:{it['linha']}" if it["linha"] else it["arquivo"]
-            print(f"- {local} · {it['padrao']}" + (f"\n    {it['trecho']}" if it["trecho"] else ""))
+            marca = f" [provável descarte: {it['descarte_provavel']}]" if it.get("descarte_provavel") else ""
+            print(f"- {local} · {it['padrao']}{marca}" + (f"\n    {it['trecho']}" if it["trecho"] else ""))
         if len(itens) > maximo:
             print(f"- ... mais {len(itens) - maximo} (use --categoria {cat} --max N)")
         print()
