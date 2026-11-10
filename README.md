@@ -83,7 +83,7 @@ Ou chame direto, opcionalmente com um escopo:
 /vibeproof src/api
 ```
 
-A skill trabalha em modo de auditoria. Ela não altera o seu código sem aprovação e gera o relatório em `.auditoria-seguranca/`. Inclua essa pasta no `.gitignore`: o relatório descreve como explorar as falhas.
+A skill trabalha em modo de auditoria. Ela não altera o seu código sem aprovação. Sem nível no pedido, ela pergunta qual usar (`rapido`, `diff`, `padrao` ou `completo`). O relatório descreve como explorar as falhas, então vai para `.auditoria-seguranca/` só se essa pasta estiver no `.gitignore` e o projeto não publicar a raiz como site; senão, fica fora do repositório.
 
 ## Como funciona
 

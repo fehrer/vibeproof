@@ -1,0 +1,26 @@
+{
+  "versao_formato": 1,
+  "projeto": "nome-do-projeto",
+  "data": "AAAA-MM-DD",
+  "commit": "abc1234",
+  "nivel": "padrao",
+  "escopo": {
+    "descricao": "repositório inteiro",
+    "intervalo": null,
+    "arquivos": null
+  },
+  "achados": [
+    {
+      "id": "calcule com: comparar_auditorias.py --id RISCO ARQUIVO TRECHO",
+      "risco": "IDOR",
+      "titulo": "Conta A lê o projeto da conta B",
+      "status": "Confirmado",
+      "severidade": "Alta",
+      "arquivo": "src/rotas/projetos.js",
+      "linha": 42,
+      "trecho": "const projeto = await db.projeto.findUnique({ where: { id: req.params.id } })",
+      "teste": "tests/vibeproof/projetos.authz.test.js::nega leitura do projeto de outra conta",
+      "commit": "abc1234"
+    }
+  ]
+}
